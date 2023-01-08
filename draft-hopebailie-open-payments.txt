@@ -1,0 +1,538 @@
+
+
+
+
+Network Working Group                                     A. Hope-Bailie
+Internet-Draft                                                    Fynbos
+Intended status: Informational                           25 October 2022
+Expires: 28 April 2023
+
+
+                             Open Payments
+                 draft-hopebailie-open-payments-latest
+
+Abstract
+
+   Open Payments is an HTTP-based protocol for interacting with an
+   online digital wallet over the Internet for the purpose of sending
+   and receiving payments from or to the wallet.  Open Payments defines
+   APIs for interacting with the wallet and also a profile of the Grant
+   Negotiation and Agreement Protocol [I-D.ietf-gnap-core-protocol-10]
+   to negotiate access to those APIs and access to select data about the
+   wallet's owner.
+
+About This Document
+
+   This note is to be removed before publishing as an RFC.
+
+   The latest revision of this draft can be found at
+   https://adrianhopebailie.github.io/open-payments-specification/draft-
+   hopebailie-open-payments.html.  Status information for this document
+   may be found at https://datatracker.ietf.org/doc/draft-hopebailie-
+   open-payments/.
+
+   Source for this draft and an issue tracker can be found at
+   https://github.com/adrianhopebailie/open-payments-specification.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 28 April 2023.
+
+Copyright Notice
+
+   Copyright (c) 2022 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction
+     1.1.  Goals
+     1.2.  Notational Conventions
+     1.3.  Terminology
+   2.  Payment Pointers
+     2.1.  Normalisation of a payment pointer
+   3.  Clients
+     3.1.  Client Identification
+     3.2.  Client Authentication
+     3.3.  DDoS Protection
+     3.4.  Request Signing
+   4.  Grants
+     4.1.  Access
+       4.1.1.  Type
+       4.1.2.  Actions
+       4.1.3.  Locations
+   5.  Operations
+     5.1.  Anonymous Requests
+     5.2.  Incoming Payment
+     5.3.  Quote
+     5.4.  Outgoing Payment
+   6.  Security Considerations
+   7.  IANA Considerations
+   8.  Normative References
+   Acknowledgments
+   Index
+   Author's Address
+
+1.  Introduction
+
+   Open Payments is a protocol, based on HTTP, that can be implemented
+   by any digital wallet to enable access to features of the wallet via
+   APIs.  It uses a profile of the Grant Negotiation and Agreement
+   Protocol [I-D.ietf-gnap-core-protocol-10] to define a mechanism by
+   which clients get authorization to use the APIs and get data about
+   the wallet owner.
+
+   A unique feature of the protocol is that the wallet identifier (a URL
+   called a payment pointer) is also the API entry point, as described
+   in Section 2.
+
+1.1.  Goals
+
+   The goal of Open Payments is to define a standard API and protocol
+   that can be implemented by a digital wallet for the purpose of:
+
+   *  sharing information about the wallet owner and underlying accounts
+      and transactions.
+
+   *  allowing clients to create an *incoming payment* at the wallet
+      which acts as a placeholder for a future incoming payment
+      (including relevant metadata such as a payment reference or
+      invoice number) in return the wallet provides details to the
+      sender on how to make the incoming payment such that it is
+      automatically reconciled with this metadata.
+
+   *  allowing clients to create an *outgoing payment* which is an
+      instruction to debit one of the underlying accounts and make a
+      payment to a counterparty.
+
+   *  allowing clients to get a *quote*for executing an outgoing payment
+      that indicates the amount that will be debited from one of the
+      underlying accounts and the amount that will be credited to the
+      counterparty if the payment is executed before the quote expires.
+
+   By defining an open standard it should be possible for an application
+   to connect to any digital wallet that implements the standard without
+   requiring custom integrations or aggregators.
+
+   Using fine grained access control through grants, wallet owners can
+   have very specific control over the permissions they grant to
+   applications that connect to their wallet.  This enables powerful use
+   cases such as third-party payment initiation and delegated
+   authorisation without compromising the security of the underlying
+   accounts or requiring that wallet owners share any sensitive account
+   information or credentials.
+
+1.2.  Notational Conventions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+1.3.  Terminology
+
+   In this document the term Open Payments server (sometimes shortened
+   to server) refers to the services offered by an implementor of the
+   Open Payment APIs.  These APIs may be served by multiple components
+   (e.g. a resource server and an authorization server).
+
+   TODO - other definitions
+
+2.  Payment Pointers
+
+   Open Payments is designed to operate over the Web with no need for
+   access to private or proprietary networks.
+
+   Every digital wallet that is accessible via the Open Payments APIs is
+   identified by one or more URLs called payment pointers.  These URLs
+   not only identify the wallet but are also the entry point for the
+   APIs served by the wallet.
+
+   Clients also identify themselves using payment pointers.  All client
+   requests in Open Payments are signed and the keys used to sign the
+   requests are published as a URL relative to the client's payment
+   pointer as defined in Section 3.2.
+
+2.1.  Normalisation of a payment pointer
+
+   Payment pointers are URLs but they have an alternative representation
+   that makes them easy to transcribe and differentiate from other URLs.
+
+   The shortened form of a payment pointer uses the $ (dollar) character
+   in place of the https:// prefix to shorten the string and also make a
+   payment pointer easy to recognise.
+
+   Payment pointer URLs MUST never have an empty path component.  This
+   design allows domain owners to use their domain as their payment
+   pointer and not create conflicts with their website which is likely
+   hosted at the same domain.  To accommodate this, any payment pointer
+   that is being normalised from the short form to the full URL form and
+   has an empty path is assigned the path /.well-know/pay.
+
+   When a payment pointer is used as an identifier it MUST be normalised
+   into the full URL form.  The following algorithm can be followed to
+   *normalise a payment pointer* (PP) to the full URL form:
+
+     if (PP starts with the character '$') then
+       PP = trim_first_character(PP);
+       PP = string_concatenate('https://', PP);
+     endif;
+
+     if (PP does not end with the character '/') then
+       PP = string_concatenate(PP, '/');
+     endif;
+
+     URL = parse_url_per_rfc3986(PP)
+
+     if (URL.scheme not equals 'https') then
+       abort
+     endif;
+
+     if (URL.path equals '/') then
+       PP = string_concatenate(PP, '.well-known/pay/');
+     endif;
+
+   If at any point this algorithm throws an error then the input is not
+   a valid payment pointer.
+
+3.  Clients
+
+   The Open Payments protocol is a client server protocol.  The client
+   will interface with one or more HTTP endpoints hosted by an Open
+   Payments server to complete an operation, always starting with the
+   payment pointer of the wallet on which the client is operating.
+
+3.1.  Client Identification
+
+   All clients MUST identify themselves when interacting with an Open
+   Payments server.
+
+   Clients identify themselves using either an access token they have
+   been granted by the server during a previous grant negotiation or by
+   passing their payment pointer to the server when initiating a grant
+   negotiation.
+
+   Clients initiating a grant negotiation with an Open Payments server
+   MUST make a [I-D.ietf-gnap-core-protocol-10] request to the server
+   and identify themselves by reference as described in Section 2.3.1 of
+   [I-D.ietf-gnap-core-protocol-10].  The client instance identifier
+   MUST be a payment pointer owned by the client.  The client proves
+   ownership of the payment pointer as described in Section 3.2.
+
+   When a server receives a request initiating a new grant negotiation
+   it MUST identify the client by the provided payment pointer.  The
+   server MUST Section 2.1 the payment pointer before using it to
+   uniquely identify the client.
+
+3.2.  Client Authentication
+
+   Clients make both authenticated and unauthenticated requests as part
+   of the protocol.  All authenticated requests MUST be signed by the
+   client.  Client authentication follows Section 2.3.3 of
+   [I-D.ietf-gnap-core-protocol-10] and security of the authentication
+   follows a profile of Section 7 of [I-D.ietf-gnap-core-protocol-10]
+   limited to only [I-D.ietf-httpbis-message-signatures-13] as a
+   proofing mechanism and ED25519 keys, passed by reference, for
+   signing.
+
+   A client MUST publish the public keys they use to sign requests in a
+   JSON Web Key Set document as defined in Section 5 of [RFC7517].
+
+   The absolute URL of the published document MUST be constructed by
+   appending the suffix 'jwks.json' to the normalised payment pointer
+   the client uses to identify itself.
+
+   For a client payment pointer (PP), the following pseudocode describes
+   an algorithm for transforming PP into the URL (K) that references the
+   JWKS document of the client:
+
+     PP = normalise(PP)
+     K = string_concatenate(PP, 'jwks.json')
+
+   A client making an authenticated request MUST use a key published in
+   the client's JSON Web Key Set document to sign the request.  The
+   signature on the request MUST follow the signing mechanism defined in
+   [I-D.ietf-httpbis-message-signatures-13] as described further in
+   Section 3.4.
+
+   Servers that process incoming authenticated requests MUST identify
+   the client making the request and authenticate the client by
+   verifying the request signature.
+
+   The binding of the client keys to the client identity is based upon
+   the presence of the JWKS document relative to the payment pointer.
+
+   It is up to the server to make a determination as to how much trust
+   it places in this binding.  Servers that receive requests from a new
+   client SHOULD have policies for calculating the level of trust they
+   place in the client identity and the binding between the client and
+   the JWKS document.
+
+   The level of trust that the server places in the identity of the
+   client SHOULD be considered when evaluating the security risk of the
+   operations being requested by the client.
+
+3.3.  DDoS Protection
+
+   The authentication of a client request by a server requires two
+   steps, getting the list of keys for the payment pointer, and
+   verifying the signature on the client request using one of the keys.
+   This exposes servers to being part of a distributed denial of service
+   attack if a malicious client makes requests to multiple servers using
+   the same payment pointer URL that points to the target of the attack.
+
+   While an attacker will not be able to provide a valid signature for a
+   payment pointer that they don't control, each server that is
+   verifying a client's keys will fetch the client's JWKS document
+   before it is able to verify the signature.  To mitigate these key
+   requests being used as a denial of service attack clients SHOULD
+   serve their JWKS document from an appropriate cache and servers
+   SHOULD track failed signature verifications and throttle or block
+   requests from IP addresses that have a highly percentage of failures
+   especially if requests from the same IP address claim multiple
+   payment pointer identities.
+
+3.4.  Request Signing
+
+   All authenticated requests from the client MUST be signed using
+   [I-D.ietf-httpbis-message-signatures-13] as described in
+   Section 7.3.1 of [I-D.ietf-gnap-core-protocol-10] with a value of
+   Ed25519 for the alg parameter.
+
+   The signing key MUST be a JWK present in the JSON Web Key Set of the
+   client as described in {#client-auth}. The keyid parameter of the
+   signature MUST be set to the kid value of the JWK, the signing
+   algorithm used MUST be the JWS algorithm denoted by the key's alg
+   field, and the explicit alg signature parameter MUST NOT be included.
+
+4.  Grants
+
+   A client that wishes to perform any operation MUST get a grant from
+   the server to perform that operation.  Grants are requested following
+   the [I-D.ietf-gnap-core-protocol-10] protocol and are issued with one
+   or more access tokens that are passed in the subsequent request to
+   perform the operation.
+
+4.1.  Access
+
+   The Open Payment APIs are resource oriented and {operations} are
+   initiated by creating a new resource.  The state of the operation is
+   determined by reading the state of the resource and an operation is
+   modified by updating the resource.
+
+   The access property of each access token returned to the client in a
+   grant response defines what operations are permitted by the client
+   when using that access token.  The schema of this data is based on
+   Section 8 of [I-D.ietf-gnap-core-protocol-10].
+
+4.1.1.  Type
+
+   Each access object MUST have a type property that has one of the
+   following values:
+
+   *  incoming-payment
+
+   *  outgoing-payment
+
+   *  quote
+
+   The type of the grant indicates the type of resource that the client
+   is permitted to perform actions on at the server.  These resources
+   and the operations they represent are defined further in
+   {operations}.
+
+4.1.2.  Actions
+
+   Each access object MUST also have an actions property which is an
+   array of actions that the grant permits the client to perform on
+   resources of the type defined in the type property.
+
+   Depending on the type of resource these MAY include:
+
+   *  create
+
+   *  read
+
+   *  read-all
+
+   *  list
+
+   *  list-all
+
+4.1.2.1.  Create
+
+   The create action permits the client to create a new resource of the
+   type specified in type.  Creating a new resource is the mechanism by
+   which an operation is initiated.  Creating a resource is done by
+   making an HTTP POST request to the API endpoint specified in
+   locations which is the URL of the resource collection for resources
+   of the specified type.
+
+   Servers MUST return a JSON representation of the newly created
+   resource in the response along with the HTTP response code 201
+   Created.  Servers MUST assign a unique URL as the identifier of any
+   newly created resource and return this URL as the id property in the
+   response.
+
+4.1.2.2.  Read
+
+   The read action permits the client to read the current state of a
+   resource of the type specified in type if that resource was created
+   by the client.  Servers MUST be capable of identifying which client
+   created a resource and ensuring that a client with a grant to read
+   resources is only given access to the resources it has created.
+
+   Reading a resource is done by making an HTTP GET request to the URL
+   that is also the unique identifier of the resource represented by the
+   id property of the resource.
+
+4.1.2.3.  Read All
+
+   The read-all action permits the client to read the current state of a
+   resource of the type specified in type even if that resource was not
+   created by the client.
+
+4.1.2.4.  List
+
+   The list action permits the client to get a list of all the resources
+   of the type specified in type.  The server MUST filter the results to
+   only return resources created by the client.
+
+   Listing resources is done by making an HTTP GET request to the URL of
+   the resource collection.
+
+4.1.2.5.  List All
+
+   The list-all action permits the client to get a list of all the
+   resources of the type specified in type even if that resource was not
+   created by the client.
+
+4.1.3.  Locations
+
+   Each access object MUST have an actions property which is an array of
+   actions that the grant permits the client to perform on resources of
+   the type defined in the type property.
+
+5.  Operations
+
+   The operations that can be performed by a client are represented by
+   resources that can be created on the server.  The API endpoints for
+   these resource sets are relative to the URL of the payment pointer of
+   the wallet.
+
+   All operations are initiated by creating a new resource through an
+   HTTP POST request to the appropriate resource collection endpoint.
+   The request body MUST contain a JSON representation of the resource
+   being created and the request content-type header MUST be
+   application/json.
+
+   The resource created is identified by a URL that is returned in the
+   response under the key id.  Clients MUST make an HTTP GET request to
+   that URL to read the state of the operation.
+
+5.1.  Anonymous Requests
+
+   All client requests MUST be authenticated as described in {client-
+   auth} with the exception of GET requests to a payment pointer.
+
+5.2.  Incoming Payment
+
+   TODO
+
+5.3.  Quote
+
+   TODO
+
+5.4.  Outgoing Payment
+
+   TODO
+
+6.  Security Considerations
+
+   TODO
+
+7.  IANA Considerations
+
+   This document has no IANA actions.
+
+8.  Normative References
+
+   [I-D.ietf-gnap-core-protocol-10]
+              Richer, J., Parecki, A., and F. Imbault, "Grant
+              Negotiation and Authorization Protocol", Work in Progress,
+              Internet-Draft, draft-ietf-gnap-core-protocol-10, 11 July
+              2022, <https://datatracker.ietf.org/doc/html/draft-ietf-
+              gnap-core-protocol-10>.
+
+   [I-D.ietf-httpbis-message-signatures-13]
+              Backman, A., Richer, J., and M. Sporny, "HTTP Message
+              Signatures", Work in Progress, Internet-Draft, draft-ietf-
+              httpbis-message-signatures-13, 26 September 2022,
+              <https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-
+              message-signatures-13>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/rfc/rfc2119>.
+
+   [RFC7517]  Jones, M., "JSON Web Key (JWK)", RFC 7517,
+              DOI 10.17487/RFC7517, May 2015,
+              <https://www.rfc-editor.org/rfc/rfc7517>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/rfc/rfc8174>.
+
+Acknowledgments
+
+   TODO acknowledge.
+
+Index
+
+   I N O Q
+
+      I
+
+         incoming payment  Section 1.1, Paragraph 2, Item 2
+
+      N
+
+         normalise a payment pointer  Section 2.1, Paragraph 4
+
+      O
+
+         outgoing payment  Section 1.1, Paragraph 2, Item 3
+
+      Q
+
+         quote  Section 1.1, Paragraph 2, Item 4
+
+Author's Address
+
+   Adrian Hope-Bailie
+   Fynbos
+   Email: adrian@fynbos.dev
